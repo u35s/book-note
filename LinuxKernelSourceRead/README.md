@@ -50,13 +50,13 @@ linux内核源代码中,许多c代码内嵌汇编语句，这是通过关键字a
 static inline unsigned long native_read_cr2(void)
 {
 	unsigned long val;
-yy	asm volatile("movl %%cr2,%0,\n\t" : "=r" (val));
+	asm volatile("movl %%cr2,%0,\n\t" : "=r" (val));
 	return val;
 }
 ```
 
 其中asm表示汇编指令开始，由于gcc在编译优化阶段，可能调整指令顺序，关键字volatile阻止gcc对这里的内嵌汇编指令进行优化。
-另外在内核代码中常常还看到__asm__,__volatile__,他们的作用和asm,volatile是一样的，仅仅是防止现有的c代码中含有asm，volatile
+另外在内核代码中常常还看到__asm__, __volatile__,他们的作用和asm,volatile是一样的，仅仅是防止现有的c代码中含有asm，volatile
 
 ```Assembly
 asm volatile(assembler template : output : input : clobber);
@@ -133,3 +133,38 @@ __asm__ __volatile__ (
 输入参数"S" (src)指定参数src必须保存到esi,D,C为edi,ecx
 在损坏部分,%ecx,%esi,%edi说明汇编指令部分会改变这几个寄存器的值，如果之前这几个寄存器被分配给其他变量，
 在代码前面gcc会插入汇编指令保存这个寄存器，在代码后gcc又会插入代码恢复这几个寄存器的值
+
+## 原子操作 原子操作在对应的汇编指令前加入lock,告诉cpu,在执行当前指令期间锁住内存总线，这样在另外的cpu操作同一个变量时，
+由于得不到总线总裁的许可，在当前指令完成前，另外的cpu不会访问到这个变量，因此它保证了在多处理器上的原子性。
+
+```Assembly
+lock decl printer
+```
+
+内核中原子操作的实例
+
+```C
+typedef struct { int counter; } atomic_t;
+
+static __inline__ void atomic_dec(atomic_t *v)
+{
+	__asm__ __volatile__(
+	LOCK_PREFIX "decl %0"
+	: "+m" (v-counter)
+	);
+}
+```
+
+## 信号量 信号量的初值表示资源的可用数量，当它为0，供求恰好满足，小于0，说明供小于求，
+在down,up中调度相应进程，有进程切换消耗
+## 自旋锁 原子操作中，使用lock前缀能够避免cpu在执行单条指令时被打扰，然而当面对成块指令时就无能为力了。
+cpu在每条指令结束时都会进行中断检查，通过关中断可以使cpu在执行临界代码块时免受打扰。但是cli只能关闭当前cpu中断。
+在多个cpu系统中，还是无法避免。虽然可以通过信号量机制来防止其他cpu在同时访问同一个数据，但是由于下面的理由，
+信号量显得不太合适:
+
+* 信号量引起的进程切换消耗相对较大，不划算。由于这类临界代码的特征是执行时间非常短暂，也就是cpu执行代码的时间远远小于进程切换的消耗，
+这种情况下还不如让cpu进入忙等待状态，直到临界代码操作完成。
+* 由于信号量可能引起进程的切换，但是在某些环境下，是不被允许的，例如中断环境中
+
+因此，这种情况下，最好的办法是让cpu进入忙等待，原理是设置一个锁变量，当cpu进入临界区之前，检查锁的状态，如果上锁，则当前cpu执行一个空循环反复检查锁的状态，直到其他的cpu解锁
+## 同步和互斥
