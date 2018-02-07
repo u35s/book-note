@@ -1,0 +1,5 @@
+TEXT ·addsd(SB), 4, $0
+	MOVSD 8(SP), X0
+	ADDSD 16(SP), X0
+	MOVSD X0, 24(SP)
+	RET
