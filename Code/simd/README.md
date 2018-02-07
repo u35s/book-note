@@ -6,7 +6,7 @@ SIMD在性能上的优势：
 
 在c和go目录下分别有c语言和go语言内嵌汇编利用simd指令的例子
 
-##go语言内嵌汇编说明
+## go语言内嵌汇编说明
 
 ### The middot and (SB)
 
